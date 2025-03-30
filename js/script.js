@@ -70,7 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initialize theme based on saved preference
 function initTheme() {
-    if (localStorage.getItem('dark-mode') === 'true') {
+    const savedTheme = localStorage.getItem('dark-mode');
+    if (savedTheme === 'true') {
         document.body.classList.add('dark-mode');
         updateThemeIcons(true);
     } else {
@@ -78,14 +79,15 @@ function initTheme() {
     }
 }
 
-// Toggle Theme Function
+// Toggle theme function
 function toggleTheme() {
     const isDarkMode = document.body.classList.toggle('dark-mode');
     localStorage.setItem('dark-mode', isDarkMode);
     updateThemeIcons(isDarkMode);
     
     // Show toast notification
-    showToast(`Switched to ${isDarkMode ? 'Dark' : 'Light'} Mode`, 'info');
+    const message = isDarkMode ? 'Dark mode enabled' : 'Light mode enabled';
+    showToast(message, 'info');
 }
 
 // Update theme icons visibility
@@ -212,12 +214,6 @@ function simulateLoading(videoId) {
             }, 500);
         }
     }, interval);
-}
-
-// Toggle Mobile Menu
-function toggleMobileMenu() {
-    navLinks.classList.toggle('active');
-    hamburger.classList.toggle('active');
 }
 
 // Handle Get Thumbnail
@@ -390,16 +386,13 @@ function downloadThumbnail(url, filename) {
         });
 }
 
-// Create and open preview modal with file size information
+// Create and open preview modal
 function openPreviewModal(imageUrl, videoTitle, qualityName, qualitySize) {
     // Remove any existing modal
     const existingModal = document.querySelector('.preview-modal');
     if (existingModal) {
         document.body.removeChild(existingModal);
     }
-    
-    // Show loading toast
-    const loadingToast = showToast('Loading preview...', 'info');
     
     // Create modal elements
     const modal = document.createElement('div');
@@ -433,9 +426,6 @@ function openPreviewModal(imageUrl, videoTitle, qualityName, qualitySize) {
     const modalFooter = document.createElement('div');
     modalFooter.className = 'preview-footer';
     
-    const imageInfo = document.createElement('div');
-    imageInfo.className = 'image-info';
-    
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'btn-primary';
     downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download this thumbnail';
@@ -444,46 +434,11 @@ function openPreviewModal(imageUrl, videoTitle, qualityName, qualitySize) {
         // Don't close modal after download to allow multiple downloads
     });
     
-    // Fetch image size information
-    fetch(imageUrl)
-        .then(response => {
-            // Get image dimensions from the actual image
-            modalImage.onload = function() {
-                const width = this.naturalWidth;
-                const height = this.naturalHeight;
-                
-                // Get file size from response headers if available
-                let fileSize = 'Unknown';
-                const contentLength = response.headers.get('content-length');
-                if (contentLength) {
-                    const sizeInKB = Math.round(contentLength / 1024);
-                    fileSize = sizeInKB < 1024 ? `${sizeInKB} KB` : `${(sizeInKB / 1024).toFixed(2)} MB`;
-                }
-                
-                // Update image info
-                imageInfo.innerHTML = `
-                    <div class="image-dimensions"><i class="fas fa-expand-arrows-alt"></i> ${width} × ${height} pixels</div>
-                    <div class="image-file-size"><i class="fas fa-file"></i> ${fileSize}</div>
-                    <div class="image-format"><i class="fas fa-image"></i> JPG Format</div>
-                `;
-                
-                // Hide loading toast
-                hideToast(loadingToast);
-            };
-            
-            return response.blob();
-        })
-        .catch(error => {
-            console.error('Error fetching image info:', error);
-            imageInfo.innerHTML = '<div class="image-error">Could not load image information</div>';
-            hideToast(loadingToast);
-        });
-    
     // Assemble modal
     modalHeader.appendChild(modalTitle);
     modalHeader.appendChild(closeBtn);
     
-    modalFooter.appendChild(imageInfo);
+    modalFooter.appendChild(modalQuality);
     modalFooter.appendChild(downloadBtn);
     
     modalContent.appendChild(modalHeader);
@@ -511,6 +466,66 @@ function openPreviewModal(imageUrl, videoTitle, qualityName, qualitySize) {
             document.removeEventListener('keydown', closeOnEscape);
         }
     });
+    
+    // Show success toast
+    showToast(`Previewing ${qualityName} thumbnail`, 'info');
+}
+
+// Toast notification system for better UX
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <div class="toast-icon">
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        </div>
+        <div class="toast-message">${message}</div>
+    `;
+    
+    // Add to DOM
+    if (!document.querySelector('.toast-container')) {
+        const container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    document.querySelector('.toast-container').appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    // Auto remove after 3 seconds for success/info messages
+    if (type !== 'error') {
+        setTimeout(() => {
+            hideToast(toast);
+        }, 3000);
+    } else {
+        // Add close button for error messages
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'toast-close';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', () => hideToast(toast));
+        toast.appendChild(closeBtn);
+    }
+    
+    return toast;
+}
+
+function hideToast(toast) {
+    toast.classList.remove('show');
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+        
+        // Remove container if empty
+        const container = document.querySelector('.toast-container');
+        if (container && container.children.length === 0) {
+            container.parentNode.removeChild(container);
+        }
+    }, 300);
 }
 
 // Get Thumbnails
@@ -605,61 +620,4 @@ function hideError() {
 // Hide Loader
 function hideLoader() {
     loader.style.display = 'none';
-}
-
-// Toast notification system for better UX
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-        <div class="toast-icon">
-            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-        </div>
-        <div class="toast-message">${message}</div>
-    `;
-    
-    // Add to DOM
-    if (!document.querySelector('.toast-container')) {
-        const container = document.createElement('div');
-        container.className = 'toast-container';
-        document.body.appendChild(container);
-    }
-    
-    document.querySelector('.toast-container').appendChild(toast);
-    
-    // Animate in
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10);
-    
-    // Auto remove after 3 seconds for success/info messages
-    if (type !== 'error') {
-        setTimeout(() => {
-            hideToast(toast);
-        }, 3000);
-    } else {
-        // Add close button for error messages
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'toast-close';
-        closeBtn.innerHTML = '&times;';
-        closeBtn.addEventListener('click', () => hideToast(toast));
-        toast.appendChild(closeBtn);
-    }
-    
-    return toast;
-}
-
-function hideToast(toast) {
-    toast.classList.remove('show');
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
-        }
-        
-        // Remove container if empty
-        const container = document.querySelector('.toast-container');
-        if (container && container.children.length === 0) {
-            container.parentNode.removeChild(container);
-        }
-    }, 300);
 }
