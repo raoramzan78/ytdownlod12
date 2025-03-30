@@ -1,10 +1,10 @@
 // DOM Elements
 const videoUrlInput = document.getElementById('video-url');
 const getThumbnailBtn = document.getElementById('get-thumbnail');
+const thumbnailsContainer = document.querySelector('.thumbnails-container');
 const loader = document.getElementById('loader');
 const errorMessage = document.getElementById('error-message');
 const results = document.getElementById('results');
-const thumbnailsContainer = document.querySelector('.thumbnails-container');
 const themeToggle = document.getElementById('theme-toggle');
 const hamburger = document.querySelector('.hamburger');
 const navLinks = document.querySelector('.nav-links');
@@ -25,12 +25,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize lazy loading
     lazyLoadImages();
     
+    // Get thumbnail button
+    if (getThumbnailBtn) {
+        getThumbnailBtn.addEventListener('click', handleGetThumbnail);
+    }
+    
+    // Enter key in input field
+    if (videoUrlInput) {
+        videoUrlInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                handleGetThumbnail();
+            }
+        });
+    }
+    
     // Example URL click handler
     const exampleLinks = document.querySelectorAll('.url-example');
     exampleLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
-            videoUrlInput.value = link.dataset.url;
+            if (videoUrlInput) {
+                videoUrlInput.value = link.dataset.url;
+                handleGetThumbnail();
+            }
         });
     });
     
@@ -59,13 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
             hamburger.classList.toggle('active');
         });
     }
-    
-    // Add defer to non-critical scripts
-    document.querySelectorAll('script:not([defer])').forEach(script => {
-        if (!script.src.includes('critical')) {
-            script.defer = true;
-        }
-    });
 });
 
 // Initialize theme based on saved preference
@@ -190,14 +200,51 @@ function lazyLoadImages() {
     }
 }
 
+// Handle Get Thumbnail
+function handleGetThumbnail() {
+    const videoUrl = videoUrlInput.value.trim();
+    
+    if (!videoUrl) {
+        showError('Please enter a YouTube video URL');
+        return;
+    }
+    
+    const videoId = extractVideoId(videoUrl);
+    
+    if (!videoId) {
+        showError('Invalid YouTube URL. Please enter a valid YouTube video URL');
+        return;
+    }
+    
+    showLoader();
+    hideError();
+    
+    // Clear previous results
+    if (thumbnailsContainer) {
+        thumbnailsContainer.innerHTML = '';
+    }
+    
+    // Simulate loading with progress
+    simulateLoading(videoId);
+}
+
 // Simulate loading with progress bar
 function simulateLoading(videoId) {
     const loadingProgress = document.getElementById('loading-progress');
     const progressText = document.getElementById('progress-text');
+    
+    if (!loadingProgress || !progressText) {
+        // Fallback if elements don't exist
+        setTimeout(() => {
+            hideLoader();
+            getThumbnails(videoId);
+        }, LOADING_DELAY);
+        return;
+    }
+    
     let progress = 0;
-    const totalTime = 18000; // 18 seconds
     const interval = 100; // Update every 100ms
-    const steps = totalTime / interval;
+    const steps = LOADING_DELAY / interval;
     const increment = 100 / steps;
     
     const progressInterval = setInterval(() => {
@@ -216,43 +263,26 @@ function simulateLoading(videoId) {
     }, interval);
 }
 
-// Handle Get Thumbnail
-function handleGetThumbnail() {
-    const videoUrl = videoUrlInput.value.trim();
-    
-    if (!videoUrl) {
-        showError('Please enter a YouTube video URL');
-        return;
-    }
-    
-    // Extract video ID
-    const videoId = extractVideoId(videoUrl);
-    
-    if (!videoId) {
-        showError('Invalid YouTube URL. Please enter a valid YouTube video URL');
-        return;
-    }
-    
-    // Show loader
-    showLoader();
-    
-    // Clear previous results
-    thumbnailsContainer.innerHTML = '';
-    
-    // Hide error message
-    hideError();
-    
-    // Simulate loading with progress
-    simulateLoading(videoId);
-}
-
 // Extract Video ID from URL
 function extractVideoId(url) {
     // Regular expressions to match different YouTube URL formats
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
+    const regexps = [
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([^&]+)/i,
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([^?]+)/i,
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/v\/([^?]+)/i,
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/user\/[^\/]+\/?\?v=([^&]+)/i,
+        /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([^?]+)/i,
+        /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([^?]+)/i
+    ];
     
-    return (match && match[2].length === 11) ? match[2] : null;
+    for (const regexp of regexps) {
+        const match = url.match(regexp);
+        if (match && match[1]) {
+            return match[1];
+        }
+    }
+    
+    return null;
 }
 
 // Create thumbnail cards with proper download functionality and preview
@@ -350,40 +380,23 @@ function downloadThumbnail(url, filename) {
     // Show loading indicator
     const loadingToast = showToast('Preparing download...', 'info');
     
-    fetch(url)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.blob();
-        })
-        .then(blob => {
-            // Hide loading indicator
-            hideToast(loadingToast);
-            
-            // Create a blob URL and trigger download
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            
-            // Clean up
-            setTimeout(() => {
-                document.body.removeChild(a);
-                URL.revokeObjectURL(blobUrl);
-                showToast('Download complete!', 'success');
-            }, 100);
-        })
-        .catch(error => {
-            console.error('Error downloading thumbnail:', error);
-            hideToast(loadingToast);
-            showToast('Download failed. Please try again.', 'error');
-            
-            // Fallback to direct download if fetch fails
-            window.open(url, '_blank');
-        });
+    // Create a temporary anchor element
+    const tempLink = document.createElement('a');
+    tempLink.href = url;
+    tempLink.setAttribute('download', filename);
+    tempLink.setAttribute('target', '_blank');
+    tempLink.style.display = 'none';
+    document.body.appendChild(tempLink);
+    
+    // Click the link to trigger download
+    tempLink.click();
+    
+    // Clean up
+    setTimeout(() => {
+        document.body.removeChild(tempLink);
+        hideToast(loadingToast);
+        showToast('Download complete!', 'success');
+    }, 1000);
 }
 
 // Create and open preview modal
@@ -471,6 +484,78 @@ function openPreviewModal(imageUrl, videoTitle, qualityName, qualitySize) {
     showToast(`Previewing ${qualityName} thumbnail`, 'info');
 }
 
+// Get Thumbnails
+function getThumbnails(videoId) {
+    const thumbnailQualities = [
+        { name: 'Standard Quality (450p)', url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, size: '450p' },
+        { name: 'HD Quality (760p)', url: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`, size: '760p' },
+        { name: 'Full HD (1080p)', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '1080p' },
+        { name: '2K Quality', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '2K' },
+        { name: '4K Quality', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '4K' }
+    ];
+    
+    // Fetch video title using oEmbed API
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch video title');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const videoTitle = data.title;
+            
+            // Create and append thumbnail cards
+            thumbnailQualities.forEach(thumbnail => {
+                const card = createThumbnailCard(thumbnail, videoTitle);
+                if (thumbnailsContainer) {
+                    thumbnailsContainer.appendChild(card);
+                }
+            });
+            
+            // Show results section
+            const resultsSection = document.getElementById('results');
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+            }
+            
+            // Initialize lazy loading for the new images
+            lazyLoadImages();
+            
+            // Re-initialize animations for the new elements
+            animateOnScroll();
+            
+            // Show success message
+            showToast('Thumbnails loaded successfully!', 'success');
+        })
+        .catch(error => {
+            console.error('Error fetching video title:', error);
+            
+            // Create and append thumbnail cards without title
+            thumbnailQualities.forEach(thumbnail => {
+                const card = createThumbnailCard(thumbnail, 'YouTube Video');
+                if (thumbnailsContainer) {
+                    thumbnailsContainer.appendChild(card);
+                }
+            });
+            
+            // Show results section
+            const resultsSection = document.getElementById('results');
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+            }
+            
+            // Initialize lazy loading for the new images
+            lazyLoadImages();
+            
+            // Re-initialize animations for the new elements
+            animateOnScroll();
+            
+            // Show warning message
+            showToast('Thumbnails loaded, but video title could not be fetched.', 'info');
+        });
+}
+
 // Toast notification system for better UX
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
@@ -528,96 +613,31 @@ function hideToast(toast) {
     }, 300);
 }
 
-// Get Thumbnails
-function getThumbnails(videoId) {
-    const thumbnailQualities = [
-        { name: 'Standard Quality (450p)', url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, size: '450p' },
-        { name: 'HD Quality (760p)', url: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`, size: '760p' },
-        { name: 'Full HD (1080p)', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '1080p' },
-        { name: '2K Quality', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '2K' },
-        { name: '4K Quality', url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`, size: '4K' }
-    ];
-    
-    // Clear previous results
-    thumbnailsContainer.innerHTML = '';
-    
-    // Fetch video title using oEmbed API
-    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to fetch video title');
-            }
-            return response.json();
-        })
-        .then(data => {
-            const videoTitle = data.title;
-            
-            // Create and append thumbnail cards
-            thumbnailQualities.forEach(thumbnail => {
-                const card = createThumbnailCard(thumbnail, videoTitle);
-                thumbnailsContainer.appendChild(card);
-            });
-            
-            // Show results section
-            document.getElementById('results').style.display = 'block';
-            
-            // Initialize lazy loading for the new images
-            lazyLoadImages();
-            
-            // Re-initialize animations for the new elements
-            animateOnScroll();
-            
-            // Show success message
-            showToast('Thumbnails loaded successfully!', 'success');
-        })
-        .catch(error => {
-            console.error('Error fetching video title:', error);
-            
-            // Create and append thumbnail cards without title
-            thumbnailQualities.forEach(thumbnail => {
-                const card = createThumbnailCard(thumbnail, 'YouTube Video');
-                thumbnailsContainer.appendChild(card);
-            });
-            
-            // Show results section
-            document.getElementById('results').style.display = 'block';
-            
-            // Initialize lazy loading for the new images
-            lazyLoadImages();
-            
-            // Re-initialize animations for the new elements
-            animateOnScroll();
-            
-            // Show warning message
-            showToast('Thumbnails loaded, but video title could not be fetched.', 'info');
-        });
-}
-
 // Show Loader
 function showLoader() {
-    loader.style.display = 'flex';
-    results.style.display = 'none';
-}
-
-// Show Results
-function showResults() {
-    loader.style.display = 'none';
-    results.style.display = 'block';
-}
-
-// Show Error
-function showError(message) {
-    errorMessage.textContent = message;
-    errorMessage.style.display = 'block';
-    results.style.display = 'none';
-}
-
-// Hide Error
-function hideError() {
-    errorMessage.style.display = 'none';
+    if (loader) {
+        loader.style.display = 'flex';
+    }
 }
 
 // Hide Loader
 function hideLoader() {
-    loader.style.display = 'none';
+    if (loader) {
+        loader.style.display = 'none';
+    }
+}
+
+// Show Error
+function showError(message) {
+    if (errorMessage) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+    }
+}
+
+// Hide Error
+function hideError() {
+    if (errorMessage) {
+        errorMessage.style.display = 'none';
+    }
 }
